@@ -10,16 +10,23 @@ export default async function handler(req, res) {
   try {
     const { amount } = req.body;
 
+    if (!amount || typeof amount !== "number") {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount,
+      amount, // ⚠️ EN CENTIMES (1€ = 100)
       currency: "eur",
+      automatic_payment_methods: {
+        enabled: true,
+      },
     });
 
     res.status(200).json({
       clientSecret: paymentIntent.client_secret,
     });
   } catch (error) {
-    console.error("Stripe error:", error);
+    console.error("STRIPE INTERNAL ERROR:", error);
     res.status(500).json({ error: "Stripe internal error" });
   }
 }
