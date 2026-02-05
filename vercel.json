@@ -1,11 +1,11 @@
 {
   "routes": [
     {
-      "src": "/api/(.*)",
+      "src": "^/api/(.*)",
       "dest": "/api/$1"
     },
     {
-      "src": "/(.*)",
+      "src": "^/(?!assets|src|favicon.ico|vite.svg)(.*)",
       "dest": "/index.html"
     }
   ]
