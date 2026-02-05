@@ -1,156 +1,87 @@
-// src/services/payment.js
-
 import { loadStripe } from '@stripe/stripe-js';
 import { doc, updateDoc, addDoc, collection } from 'firebase/firestore';
 import { db } from './firebase';
 
-// ⚠️ REMPLACER PAR VOTRE CLÉ PUBLIQUE STRIPE
-const stripePromise = loadStripe('pk_test_VOTRE_CLE_PUBLIQUE_STRIPE');
-
-// Configuration
-const STRIPE_PRICE_ID = 'price_VOTRE_PRICE_ID'; // Créer sur Stripe Dashboard
-const FLUTTERWAVE_PUBLIC_KEY = 'FLWPUBK_TEST-VOTRE_CLE';
-const API_URL = 'http://localhost:3001'; // URL de votre backend
+/**
+ * Stripe public key (ENV)
+ * ⚠️ DOIT être définie sur Vercel
+ */
+const stripePromise = loadStripe(
+  import.meta.env.VITE_STRIPE_PUBLIC_KEY
+);
 
 /**
- * STRIPE - Créer session de paiement
+ * STRIPE — PaymentIntent (Vercel Serverless)
  */
-export async function createStripeCheckout(userId, userEmail) {
+export async function payWithStripe(userId, userEmail) {
   try {
     const stripe = await stripePromise;
 
-    // Appeler votre backend pour créer la session
-    const response = await fetch(`${API_URL}/api/create-checkout-session`, {
+    // Appel API Vercel (PAS de localhost)
+    const res = await fetch('/api/create-payment-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        amount: 100, // 1€ = 100 centimes
         userId,
         email: userEmail,
-        priceId: STRIPE_PRICE_ID,
-        successUrl: `${window.location.origin}/subscription/success`,
-        cancelUrl: `${window.location.origin}/subscription/cancel`
-      })
+      }),
     });
 
-    const { sessionId } = await response.json();
-
-    // Rediriger vers Stripe Checkout
-    const { error } = await stripe.redirectToCheckout({ sessionId });
-
-    if (error) {
-      throw new Error(error.message);
+    if (!res.ok) {
+      throw new Error('Stripe API error');
     }
-  } catch (error) {
-    console.error('Stripe error:', error);
-    throw error;
-  }
-}
 
-/**
- * FLUTTERWAVE - Créer paiement
- */
-export async function createFlutterwavePayment(userId, userEmail, userName) {
-  try {
-    const FlutterwaveCheckout = window.FlutterwaveCheckout;
-    
-    FlutterwaveCheckout({
-      public_key: FLUTTERWAVE_PUBLIC_KEY,
-      tx_ref: `tontine_${userId}_${Date.now()}`,
-      amount: 1, // 1 EUR
-      currency: 'EUR',
-      payment_options: 'card,mobilemoney,ussd',
-      customer: {
-        email: userEmail,
-        name: userName
-      },
-      customizations: {
-        title: 'Tontine Pour Tous - Abonnement PRO',
-        description: 'Abonnement mensuel (1€/mois)',
-        logo: 'https://votre-logo.png'
-      },
-      callback: async function(data) {
-        if (data.status === 'successful') {
-          // Enregistrer le paiement
-          await handleSuccessfulPayment(userId, {
-            amount: 1,
-            currency: 'EUR',
-            payment_method: 'flutterwave',
-            payment_provider_id: data.transaction_id,
-            status: 'completed'
-          });
-        }
-      },
-      onclose: function() {
-        console.log('Payment modal closed');
-      }
-    });
-  } catch (error) {
-    console.error('Flutterwave error:', error);
-    throw error;
-  }
-}
+    const { clientSecret } = await res.json();
 
-/**
- * Gérer paiement réussi - Activer PRO
- */
-export async function handleSuccessfulPayment(userId, paymentData) {
-  try {
-    const now = new Date();
-    const expiryDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // +30 jours
+    // Confirmer le paiement (ex: avec CardElement)
+    const result = await stripe.confirmCardPayment(clientSecret);
 
-    // 1. Mettre à jour le statut utilisateur
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      subscription_status: 'pro',
-      subscription_expires_at: expiryDate.toISOString(),
-      updated_at: now.toISOString()
-    });
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
 
-    // 2. Enregistrer le paiement
-    await addDoc(collection(db, 'payments'), {
-      userId,
-      ...paymentData,
-      subscription_period_start: now.toISOString(),
-      subscription_period_end: expiryDate.toISOString(),
-      created_at: now.toISOString()
-    });
-
-    return { success: true, expiryDate };
-  } catch (error) {
-    console.error('Error activating PRO:', error);
-    throw error;
-  }
-}
-
-/**
- * Vérifier expiration abonnement
- */
-export function isSubscriptionExpired(expiryDate) {
-  if (!expiryDate) return true;
-  return new Date(expiryDate) < new Date();
-}
-
-/**
- * Demander activation PRO (pour paiement manuel)
- */
-export async function requestProActivation(userId, userEmail) {
-  try {
-    await addDoc(collection(db, 'subscription_requests'), {
-      userId,
-      userEmail,
-      status: 'pending',
-      requested_at: new Date().toISOString()
-    });
-
-    // Mettre à jour le statut utilisateur
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
-      subscription_status: 'pending'
-    });
+    if (result.paymentIntent.status === 'succeeded') {
+      await handleSuccessfulPayment(userId, {
+        amount: 1,
+        currency: 'EUR',
+        payment_method: 'stripe',
+        payment_provider_id: result.paymentIntent.id,
+        status: 'completed',
+      });
+    }
 
     return { success: true };
   } catch (error) {
-    console.error('Error requesting PRO:', error);
+    console.error('Stripe payment error:', error);
     throw error;
   }
+}
+
+/**
+ * ACTIVER PRO APRÈS PAIEMENT
+ */
+export async function handleSuccessfulPayment(userId, paymentData) {
+  const now = new Date();
+  const expiryDate = new Date(
+    now.getTime() + 30 * 24 * 60 * 60 * 1000
+  );
+
+  // User
+  await updateDoc(doc(db, 'users', userId), {
+    subscription_status: 'pro',
+    subscription_expires_at: expiryDate.toISOString(),
+    updated_at: now.toISOString(),
+  });
+
+  // Payment history
+  await addDoc(collection(db, 'payments'), {
+    userId,
+    ...paymentData,
+    subscription_period_start: now.toISOString(),
+    subscription_period_end: expiryDate.toISOString(),
+    created_at: now.toISOString(),
+  });
+
+  return { success: true, expiryDate };
 }
