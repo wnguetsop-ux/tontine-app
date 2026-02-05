@@ -1,3 +1,5 @@
+import SubscriptionSuccess from './pages/SubscriptionSuccess';
+import SubscriptionCancel from './pages/SubscriptionCancel';
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './hooks/useAuth';
@@ -42,6 +44,16 @@ export default function App() {
               <Route path="cash-fund" element={<CashFund />} />
               <Route path="settings" element={<Settings />} />
               <Route path="admin" element={<AdminManagement />} />
+              <Route
+  path="subscription/success"
+  element={<SubscriptionSuccess />}
+/>
+
+<Route
+  path="subscription/cancel"
+  element={<SubscriptionCancel />}
+/>
+
             </Route>
           </Routes>
         </Router>

@@ -4,7 +4,6 @@ import { useCurrency } from '../hooks/useCurrency';
 import { useTranslation } from 'react-i18next';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const Icon = ({ name, className = "w-5 h-5" }) => {
   const icons = {
@@ -17,7 +16,7 @@ export default function Settings() {
   const { user, profile } = useAuth();
   const { currency, setCurrency, currencies } = useCurrency();
   const { t, i18n } = useTranslation();
-  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('');
   const [showPaymentInfo, setShowPaymentInfo] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
   const [contactForm, setContactForm] = useState({
@@ -36,72 +35,35 @@ export default function Settings() {
     localStorage.setItem('language', lng);
   };
 
-  const handleStripePayment = async () => {
-    setPaymentLoading(true);
-    try {
-      const functions = getFunctions();
-      const createCheckout = httpsCallable(functions, 'createStripeCheckout');
-      
-      const result = await createCheckout({
-        userEmail: user.email,
-        userId: user.uid,
-        successUrl: `${window.location.origin}/settings?payment=success`,
-        cancelUrl: `${window.location.origin}/settings?payment=cancelled`
-      });
-
-      window.location.href = result.data.url;
-    } catch (error) {
-      console.error('Stripe error:', error);
-      alert('❌ Erreur Stripe: ' + error.message);
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
-
-  const handleFlutterwavePayment = async () => {
-    setPaymentLoading(true);
-    try {
-      const functions = getFunctions();
-      const createPayment = httpsCallable(functions, 'createFlutterwavePayment');
-      
-      const result = await createPayment({
-        userEmail: user.email,
-        userId: user.uid,
-        userName: user.displayName || user.email.split('@')[0],
-        amount: 1000, // Mis à jour à 1000 FCFA
-        currency: 'XAF',
-        redirectUrl: `${window.location.origin}/settings?payment=verify`
-      });
-
-      window.location.href = result.data.link;
-    } catch (error) {
-      console.error('Flutterwave error:', error);
-      alert('❌ Erreur Flutterwave: ' + error.message);
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
-
-  const handleManualPayment = async () => {
-    setShowPaymentInfo(true);
+  const handleUpgradeToPro = async (method) => {
+    setPaymentMethod(method);
     
-    try {
-      await setDoc(doc(db, 'subscription_requests', user.uid), {
-        userId: user.uid,
-        userEmail: user.email,
-        status: 'pending',
-        payment_method: 'manual',
-        requested_at: new Date().toISOString()
-      });
+    if (method === 'stripe' || method === 'flutterwave') {
+      alert(`Redirection vers ${method}... (À configurer)`);
+      return;
+    }
+    
+    if (method === 'manual') {
+      setShowPaymentInfo(true);
       
-      await setDoc(doc(db, 'users', user.uid), {
-        subscription_status: 'pending'
-      }, { merge: true });
-      
-      alert('✅ Demande envoyée ! Veuillez effectuer le paiement et nous contacter.');
-    } catch (error) {
-      console.error('Error:', error);
-      alert('❌ Erreur');
+      try {
+        await setDoc(doc(db, 'subscription_requests', user.uid), {
+          userId: user.uid,
+          userEmail: user.email,
+          status: 'pending',
+          payment_method: 'manual',
+          requested_at: new Date().toISOString()
+        });
+        
+        await setDoc(doc(db, 'users', user.uid), {
+          subscription_status: 'pending'
+        }, { merge: true });
+        
+        alert('✅ Demande envoyée ! Veuillez effectuer le paiement et nous contacter.');
+      } catch (error) {
+        console.error('Error:', error);
+        alert('❌ Erreur');
+      }
     }
   };
 
@@ -122,7 +84,7 @@ ${contactForm.message}
 Email: ${user.email}
 Date: ${new Date().toLocaleString('fr-FR')}`;
 
-    const whatsappUrl = `https://wa.me/393299639430?text=${encodeURIComponent(whatsappMessage)}`;
+    const whatsappUrl = `https://wa.me/237674095062?text=${encodeURIComponent(whatsappMessage)}`;
     window.open(whatsappUrl, '_blank');
     
     setContactForm({ subject: '', message: '' });
@@ -137,6 +99,7 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
         <p className="text-indigo-100">Configurez votre compte</p>
       </div>
 
+      {/* Abonnement */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <h3 className="font-black text-lg mb-4">💎 {t('subscription')}</h3>
         
@@ -182,6 +145,7 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
             </div>
           </div>
 
+          {/* Passer Premium */}
           {!isPro && !isPending && (
             <div className="bg-gradient-to-r from-amber-50 to-orange-50 p-6 rounded-2xl border-2 border-amber-200">
               <h4 className="font-black text-lg mb-3 text-amber-900">🚀 Passer en Premium</h4>
@@ -208,24 +172,24 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
               <div className="space-y-3">
                 <p className="font-bold text-amber-900">Choisissez votre moyen de paiement:</p>
                 
+                <div className="w-full flex justify-center">
+  <stripe-buy-button
+    buy-button-id="buy_btn_1SxZne0xylvxJgKUiwM0DNho"
+    publishable-key="pk_live_51Swh800xylvxJgKUViyH1UJriRS7nQpIqke987D7mb2P3JtZXg1IcWqidG7DeofP9AydrVrNboBEx6tsEbExyFZp00tBlStzJt"
+  >
+  </stripe-buy-button>
+</div>
+
+
                 <button
-                  onClick={handleStripePayment}
-                  disabled={paymentLoading}
-                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  onClick={() => handleUpgradeToPro('flutterwave')}
+                  className="w-full py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
                 >
-                  {paymentLoading ? '...' : '💳 Carte bancaire (1€/mois - Stripe)'}
+                  🌍 Mobile Money (Flutterwave)
                 </button>
 
                 <button
-                  onClick={handleFlutterwavePayment}
-                  disabled={paymentLoading}
-                  className="w-full py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl font-bold hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {paymentLoading ? '...' : '🌍 Mobile Money (1 000 FCFA/mois - Flutterwave)'}
-                </button>
-
-                <button
-                  onClick={handleManualPayment}
+                  onClick={() => handleUpgradeToPro('manual')}
                   className="w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                   💰 Paiement Manuel
@@ -234,13 +198,14 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
             </div>
           )}
 
+          {/* Instructions paiement manuel */}
           {showPaymentInfo && (
             <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-2xl">
               <h4 className="font-black text-lg mb-3 text-blue-900">📋 Instructions de Paiement</h4>
               <div className="space-y-3 text-sm text-blue-800">
                 <div>
-                  <p className="font-bold">WhatsApp (Italie):</p>
-                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">+39 329 963 9430</p>
+                  <p className="font-bold">Mobile Money (MTN/Orange):</p>
+                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">+237 674 095 062</p>
                 </div>
                 <div>
                   <p className="font-bold">PayPal:</p>
@@ -248,11 +213,11 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
                 </div>
                 <div>
                   <p className="font-bold">Montant:</p>
-                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">1€ / mois OU 1 000 FCFA / mois</p>
+                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">10 000 FCFA / mois</p>
                 </div>
                 <div className="bg-blue-100 p-3 rounded-xl">
                   <p className="font-bold">⚠️ Important:</p>
-                  <p>Après paiement, envoyez une capture d'écran par WhatsApp au +39 329 963 9430 avec votre email ({user?.email})</p>
+                  <p>Après paiement, envoyez une capture d'écran par WhatsApp au +237 674 095 062 avec votre email ({user?.email})</p>
                 </div>
               </div>
             </div>
@@ -260,6 +225,7 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
         </div>
       </div>
 
+      {/* Préférences */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <h3 className="font-black text-lg mb-4">🎨 Préférences</h3>
         
@@ -279,6 +245,9 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
                 </option>
               ))}
             </select>
+            <p className="text-xs text-slate-500 mt-2">
+              💡 La devise sera automatiquement appliquée à toutes les pages
+            </p>
           </div>
 
           <div>
@@ -293,10 +262,14 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
               <option value="fr">🇫🇷 Français</option>
               <option value="en">🇬🇧 English</option>
             </select>
+            <p className="text-xs text-slate-500 mt-2">
+              💡 La langue sera synchronisée sur toutes les pages
+            </p>
           </div>
         </div>
       </div>
 
+      {/* Contact Admin - NOUVEAU */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <h3 className="font-black text-lg mb-4">📞 {t('contactAdmin')}</h3>
         
@@ -310,27 +283,44 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
           </button>
         ) : (
           <div className="space-y-4">
-            <select
-              value={contactForm.subject}
-              onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
-              className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
-            >
-              <option value="">Sujet...</option>
-              <option value="Question Technique">Question Technique</option>
-              <option value="Problème de Paiement">Problème de Paiement</option>
-              <option value="Demande d'Activation PRO">Demande d'Activation PRO</option>
-              <option value="Bug / Erreur">Bug / Erreur</option>
-              <option value="Suggestion">Suggestion</option>
-              <option value="Autre">Autre</option>
-            </select>
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                📌 Sujet de votre demande *
+              </label>
+              <select
+                value={contactForm.subject}
+                onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
+              >
+                <option value="">Sélectionnez un sujet...</option>
+                <option value="Question Technique">Question Technique</option>
+                <option value="Problème de Paiement">Problème de Paiement</option>
+                <option value="Demande d'Activation PRO">Demande d'Activation PRO</option>
+                <option value="Bug / Erreur">Bug / Erreur</option>
+                <option value="Suggestion">Suggestion</option>
+                <option value="Autre">Autre</option>
+              </select>
+            </div>
 
-            <textarea
-              value={contactForm.message}
-              onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-              placeholder="Votre message..."
-              rows={6}
-              className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
-            />
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">
+                💬 Votre message *
+              </label>
+              <textarea
+                value={contactForm.message}
+                onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+                placeholder="Décrivez votre demande en détail..."
+                rows={6}
+                className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
+              />
+            </div>
+
+            <div className="bg-indigo-50 p-4 rounded-xl">
+              <p className="text-sm text-indigo-800">
+                ℹ️ Votre message sera envoyé directement sur notre WhatsApp. 
+                Vous recevrez une réponse dans les 24h.
+              </p>
+            </div>
 
             <div className="flex gap-3">
               <button
@@ -347,19 +337,24 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
                 className="flex-1 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
               >
                 <Icon name="send" className="w-5 h-5" />
-                Envoyer
+                Envoyer sur WhatsApp
               </button>
             </div>
           </div>
         )}
       </div>
 
+      {/* Informations compte */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <h3 className="font-black text-lg mb-4">👤 Mon Compte</h3>
         <div className="space-y-3">
           <div>
             <p className="text-sm text-slate-500">Email</p>
             <p className="font-bold">{user?.email}</p>
+          </div>
+          <div>
+            <p className="text-sm text-slate-500">ID Utilisateur</p>
+            <p className="font-mono text-sm">{user?.uid}</p>
           </div>
         </div>
       </div>
