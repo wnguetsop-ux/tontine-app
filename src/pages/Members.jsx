@@ -303,12 +303,3 @@ export default function Members() {
     </div>
   );
 }
-import { startPayment } from '../services/payment';
-
-// ... dans ton composant ...
-<button 
-  onClick={startPayment}
-  className="bg-blue-600 text-white p-2 rounded"
->
-  Cotiser via Stripe
-</button>

@@ -1,19 +1,14 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { auth, db } from '../services/firebase';
 import { 
-  getAuth, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
-  signOut as firebaseSignOut,
+  signOut,
   onAuthStateChanged 
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
 
 const AuthContext = createContext();
-
-export function useAuth() {
-  return useContext(AuthContext);
-}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -25,23 +20,14 @@ export function AuthProvider({ children }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         
-        // Récupérer le profil utilisateur
-        const profileRef = doc(db, 'users', firebaseUser.uid);
-        const profileSnap = await getDoc(profileRef);
-        
-        if (profileSnap.exists()) {
-          setProfile(profileSnap.data());
-        } else {
-          // Créer profil par défaut
-          const newProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            subscription_status: 'free',
-            max_members: 5,
-            created_at: new Date().toISOString()
-          };
-          await setDoc(profileRef, newProfile);
-          setProfile(newProfile);
+        // Charger le profil utilisateur
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            setProfile(userDoc.data());
+          }
+        } catch (error) {
+          console.error('Error loading profile:', error);
         }
       } else {
         setUser(null);
@@ -53,24 +39,51 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  const signIn = async (email, password) => {
-    return await signInWithEmailAndPassword(auth, email, password);
+  const login = async (email, password) => {
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      return result.user;
+    } catch (error) {
+      throw error;
+    }
   };
 
-  const signUp = async (email, password) => {
-    return await createUserWithEmailAndPassword(auth, email, password);
+  const register = async (email, password) => {
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Créer le profil utilisateur
+      await setDoc(doc(db, 'users', result.user.uid), {
+        email: email,
+        subscription_status: 'free',
+        created_at: new Date().toISOString()
+      });
+
+      return result.user;
+    } catch (error) {
+      throw error;
+    }
   };
 
-  const signOut = async () => {
-    return await firebaseSignOut(auth);
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setProfile(null);
+      // Redirection sera gérée par le composant
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
   };
 
   const value = {
     user,
     profile,
-    signIn,
-    signUp,
-    signOut
+    login,
+    register,
+    logout,
+    loading
   };
 
   return (
@@ -78,4 +91,12 @@ export function AuthProvider({ children }) {
       {!loading && children}
     </AuthContext.Provider>
   );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+  return context;
 }

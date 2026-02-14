@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useCurrency } from '../hooks/useCurrency';
+import { useTheme } from '../contexts/ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { Link } from 'react-router-dom';
 
 const Icon = ({ name, className = "w-5 h-5" }) => {
   const icons = {
-    send: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+    send: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />,
+    share: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />,
+    moon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />,
+    sun: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />,
+    info: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
   };
   return <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" className={className}>{icons[name]}</svg>;
 };
@@ -15,10 +21,11 @@ const Icon = ({ name, className = "w-5 h-5" }) => {
 export default function Settings() {
   const { user, profile } = useAuth();
   const { currency, setCurrency, currencies } = useCurrency();
+  const { theme, setTheme } = useTheme();
   const { t, i18n } = useTranslation();
-  const [paymentMethod, setPaymentMethod] = useState('');
   const [showPaymentInfo, setShowPaymentInfo] = useState(false);
   const [showContactForm, setShowContactForm] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [contactForm, setContactForm] = useState({
     subject: '',
     message: ''
@@ -35,35 +42,34 @@ export default function Settings() {
     localStorage.setItem('language', lng);
   };
 
-  const handleUpgradeToPro = async (method) => {
-    setPaymentMethod(method);
+  const handleStripePayment = () => {
+    window.open('https://buy.stripe.com/14AdR1gMt05YbvmgygaVa00', '_blank');
+  };
+
+  const handleFlutterwavePayment = () => {
+    alert('Flutterwave sera bientôt disponible !');
+  };
+
+  const handleManualPayment = async () => {
+    setShowPaymentInfo(true);
     
-    if (method === 'stripe' || method === 'flutterwave') {
-      alert(`Redirection vers ${method}... (À configurer)`);
-      return;
-    }
-    
-    if (method === 'manual') {
-      setShowPaymentInfo(true);
+    try {
+      await setDoc(doc(db, 'subscription_requests', user.uid), {
+        userId: user.uid,
+        userEmail: user.email,
+        status: 'pending',
+        payment_method: 'manual',
+        requested_at: new Date().toISOString()
+      });
       
-      try {
-        await setDoc(doc(db, 'subscription_requests', user.uid), {
-          userId: user.uid,
-          userEmail: user.email,
-          status: 'pending',
-          payment_method: 'manual',
-          requested_at: new Date().toISOString()
-        });
-        
-        await setDoc(doc(db, 'users', user.uid), {
-          subscription_status: 'pending'
-        }, { merge: true });
-        
-        alert('✅ Demande envoyée ! Veuillez effectuer le paiement et nous contacter.');
-      } catch (error) {
-        console.error('Error:', error);
-        alert('❌ Erreur');
-      }
+      await setDoc(doc(db, 'users', user.uid), {
+        subscription_status: 'pending'
+      }, { merge: true });
+      
+      alert('✅ Demande envoyée ! Veuillez effectuer le paiement et nous contacter.');
+    } catch (error) {
+      console.error('Error:', error);
+      alert('❌ Erreur');
     }
   };
 
@@ -84,7 +90,7 @@ ${contactForm.message}
 Email: ${user.email}
 Date: ${new Date().toLocaleString('fr-FR')}`;
 
-    const whatsappUrl = `https://wa.me/237674095062?text=${encodeURIComponent(whatsappMessage)}`;
+    const whatsappUrl = `https://wa.me/393299639430?text=${encodeURIComponent(whatsappMessage)}`;
     window.open(whatsappUrl, '_blank');
     
     setContactForm({ subject: '', message: '' });
@@ -92,11 +98,48 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
     alert('✅ Votre message va être envoyé sur WhatsApp !');
   };
 
+  const handleShare = async (method) => {
+    const shareText = `🎉 Découvrez Tontine Pour Tous !\n\nGérez votre tontine facilement:\n✅ Membres illimités (Premium)\n✅ Suivi cotisations & prêts\n✅ Rapports PDF automatiques\n✅ Multi-devises\n\n👉 ${window.location.origin}`;
+    
+    if (method === 'whatsapp') {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank');
+    } else if (method === 'email') {
+      window.open(`mailto:?subject=Découvrez Tontine Pour Tous&body=${encodeURIComponent(shareText)}`, '_blank');
+    } else if (method === 'copy') {
+      navigator.clipboard.writeText(window.location.origin);
+      alert('✅ Lien copié !');
+    } else if (method === 'native' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Tontine Pour Tous',
+          text: shareText,
+          url: window.location.origin
+        });
+      } catch (error) {
+        console.log('Share cancelled');
+      }
+    }
+    setShowShareModal(false);
+  };
+
   return (
     <div className="space-y-6 pb-20 lg:pb-0">
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-8 text-white shadow-2xl">
         <h2 className="text-3xl font-black mb-2">⚙️ {t('settings')}</h2>
         <p className="text-indigo-100">Configurez votre compte</p>
+      </div>
+
+      {/* Partager l'app */}
+      <div className="bg-white rounded-2xl shadow-sm p-6">
+        <h3 className="font-black text-lg mb-4">📤 Partager l'application</h3>
+        <p className="text-slate-600 mb-4">Invitez vos amis à découvrir Tontine Pour Tous !</p>
+        <button
+          onClick={() => setShowShareModal(true)}
+          className="w-full py-4 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-3"
+        >
+          <Icon name="share" className="w-6 h-6" />
+          Partager l'application
+        </button>
       </div>
 
       {/* Abonnement */}
@@ -172,24 +215,22 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
               <div className="space-y-3">
                 <p className="font-bold text-amber-900">Choisissez votre moyen de paiement:</p>
                 
-                <div className="w-full flex justify-center">
-  <stripe-buy-button
-    buy-button-id="buy_btn_1SxZne0xylvxJgKUiwM0DNho"
-    publishable-key="pk_live_51Swh800xylvxJgKUViyH1UJriRS7nQpIqke987D7mb2P3JtZXg1IcWqidG7DeofP9AydrVrNboBEx6tsEbExyFZp00tBlStzJt"
-  >
-  </stripe-buy-button>
-</div>
-
-
                 <button
-                  onClick={() => handleUpgradeToPro('flutterwave')}
-                  className="w-full py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                  onClick={handleStripePayment}
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
                 >
-                  🌍 Mobile Money (Flutterwave)
+                  💳 Carte bancaire (1€/mois - Stripe)
                 </button>
 
                 <button
-                  onClick={() => handleUpgradeToPro('manual')}
+                  onClick={handleFlutterwavePayment}
+                  className="w-full py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                >
+                  🌍 Mobile Money (1 000 FCFA/mois - Flutterwave)
+                </button>
+
+                <button
+                  onClick={handleManualPayment}
                   className="w-full py-3 bg-gradient-to-r from-emerald-600 to-emerald-700 text-white rounded-xl font-bold hover:shadow-lg transition-all flex items-center justify-center gap-2"
                 >
                   💰 Paiement Manuel
@@ -205,7 +246,11 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
               <div className="space-y-3 text-sm text-blue-800">
                 <div>
                   <p className="font-bold">Mobile Money (MTN/Orange):</p>
-                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">+237 674 095 062</p>
+                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">+237 651 495 483</p>
+                </div>
+                <div>
+                  <p className="font-bold">WhatsApp (Italie):</p>
+                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">+39 329 963 9430</p>
                 </div>
                 <div>
                   <p className="font-bold">PayPal:</p>
@@ -213,11 +258,11 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
                 </div>
                 <div>
                   <p className="font-bold">Montant:</p>
-                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">10 000 FCFA / mois</p>
+                  <p className="font-mono bg-white px-3 py-2 rounded mt-1">1€ / mois OU 1 000 FCFA / mois</p>
                 </div>
                 <div className="bg-blue-100 p-3 rounded-xl">
                   <p className="font-bold">⚠️ Important:</p>
-                  <p>Après paiement, envoyez une capture d'écran par WhatsApp au +237 674 095 062 avec votre email ({user?.email})</p>
+                  <p>Après paiement, envoyez une capture d'écran par WhatsApp au +39 329 963 9430 avec votre email ({user?.email})</p>
                 </div>
               </div>
             </div>
@@ -230,6 +275,37 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
         <h3 className="font-black text-lg mb-4">🎨 Préférences</h3>
         
         <div className="space-y-6">
+          {/* Thème */}
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-2">
+              🌓 Thème
+            </label>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setTheme('light')}
+                className={`flex-1 py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                  theme === 'light' 
+                    ? 'bg-indigo-600 text-white shadow-lg' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Icon name="sun" />
+                Clair
+              </button>
+              <button
+                onClick={() => setTheme('dark')}
+                className={`flex-1 py-3 px-4 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${
+                  theme === 'dark' 
+                    ? 'bg-indigo-600 text-white shadow-lg' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Icon name="moon" />
+                Sombre
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-2">
               💱 {t('currency')}
@@ -245,9 +321,6 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
                 </option>
               ))}
             </select>
-            <p className="text-xs text-slate-500 mt-2">
-              💡 La devise sera automatiquement appliquée à toutes les pages
-            </p>
           </div>
 
           <div>
@@ -262,14 +335,25 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
               <option value="fr">🇫🇷 Français</option>
               <option value="en">🇬🇧 English</option>
             </select>
-            <p className="text-xs text-slate-500 mt-2">
-              💡 La langue sera synchronisée sur toutes les pages
-            </p>
           </div>
         </div>
       </div>
 
-      {/* Contact Admin - NOUVEAU */}
+      {/* À propos */}
+      <div className="bg-white rounded-2xl shadow-sm p-6">
+        <h3 className="font-black text-lg mb-4 flex items-center gap-2">
+          <Icon name="info" />
+          À propos
+        </h3>
+        <Link
+          to="/about"
+          className="block w-full py-3 bg-slate-100 text-center rounded-xl font-bold hover:bg-slate-200 transition-all"
+        >
+          En savoir plus sur Tontine Pour Tous →
+        </Link>
+      </div>
+
+      {/* Contact */}
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <h3 className="font-black text-lg mb-4">📞 {t('contactAdmin')}</h3>
         
@@ -283,44 +367,27 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
           </button>
         ) : (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                📌 Sujet de votre demande *
-              </label>
-              <select
-                value={contactForm.subject}
-                onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
-                className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
-              >
-                <option value="">Sélectionnez un sujet...</option>
-                <option value="Question Technique">Question Technique</option>
-                <option value="Problème de Paiement">Problème de Paiement</option>
-                <option value="Demande d'Activation PRO">Demande d'Activation PRO</option>
-                <option value="Bug / Erreur">Bug / Erreur</option>
-                <option value="Suggestion">Suggestion</option>
-                <option value="Autre">Autre</option>
-              </select>
-            </div>
+            <select
+              value={contactForm.subject}
+              onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
+              className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
+            >
+              <option value="">Sujet...</option>
+              <option value="Question Technique">Question Technique</option>
+              <option value="Problème de Paiement">Problème de Paiement</option>
+              <option value="Demande d'Activation PRO">Demande d'Activation PRO</option>
+              <option value="Bug / Erreur">Bug / Erreur</option>
+              <option value="Suggestion">Suggestion</option>
+              <option value="Autre">Autre</option>
+            </select>
 
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">
-                💬 Votre message *
-              </label>
-              <textarea
-                value={contactForm.message}
-                onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                placeholder="Décrivez votre demande en détail..."
-                rows={6}
-                className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
-              />
-            </div>
-
-            <div className="bg-indigo-50 p-4 rounded-xl">
-              <p className="text-sm text-indigo-800">
-                ℹ️ Votre message sera envoyé directement sur notre WhatsApp. 
-                Vous recevrez une réponse dans les 24h.
-              </p>
-            </div>
+            <textarea
+              value={contactForm.message}
+              onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
+              placeholder="Votre message..."
+              rows={6}
+              className="w-full px-4 py-3 bg-slate-50 rounded-xl border-2 border-slate-200 focus:border-indigo-600 outline-none font-bold"
+            />
 
             <div className="flex gap-3">
               <button
@@ -337,7 +404,7 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
                 className="flex-1 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
               >
                 <Icon name="send" className="w-5 h-5" />
-                Envoyer sur WhatsApp
+                Envoyer
               </button>
             </div>
           </div>
@@ -352,12 +419,60 @@ Date: ${new Date().toLocaleString('fr-FR')}`;
             <p className="text-sm text-slate-500">Email</p>
             <p className="font-bold">{user?.email}</p>
           </div>
-          <div>
-            <p className="text-sm text-slate-500">ID Utilisateur</p>
-            <p className="font-mono text-sm">{user?.uid}</p>
-          </div>
         </div>
       </div>
+
+      {/* Modal Partage */}
+      {showShareModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md">
+            <h3 className="text-2xl font-black mb-6">📤 Partager l'application</h3>
+            
+            <div className="space-y-3">
+              <button
+                onClick={() => handleShare('whatsapp')}
+                className="w-full py-4 bg-green-500 text-white rounded-xl font-bold hover:bg-green-600 transition-all flex items-center justify-center gap-3"
+              >
+                <span className="text-2xl">💬</span>
+                WhatsApp
+              </button>
+
+              <button
+                onClick={() => handleShare('email')}
+                className="w-full py-4 bg-blue-500 text-white rounded-xl font-bold hover:bg-blue-600 transition-all flex items-center justify-center gap-3"
+              >
+                <span className="text-2xl">✉️</span>
+                Email
+              </button>
+
+              <button
+                onClick={() => handleShare('copy')}
+                className="w-full py-4 bg-slate-600 text-white rounded-xl font-bold hover:bg-slate-700 transition-all flex items-center justify-center gap-3"
+              >
+                <span className="text-2xl">🔗</span>
+                Copier le lien
+              </button>
+
+              {navigator.share && (
+                <button
+                  onClick={() => handleShare('native')}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
+                >
+                  <Icon name="share" className="w-6 h-6" />
+                  Autres options
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowShareModal(false)}
+              className="w-full mt-4 py-3 bg-slate-100 rounded-xl font-bold"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
